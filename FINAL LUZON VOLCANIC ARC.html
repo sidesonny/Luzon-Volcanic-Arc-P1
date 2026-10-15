@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Luzon Volcanic Arc</title>
+
+  <script src="https://unpkg.com/deck.gl@9.0.38/dist.min.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: #0e1117;
+      color: #e8eaed;
+    }
+
+    #map {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+    }
+
+    /* ── Title bar ───────────────────────────────────────────── */
+    .title-bar {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      z-index: 10;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .title-bar h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #ffdc50;
+      text-shadow: 0 2px 12px rgba(0,0,0,0.7);
+      letter-spacing: 0.03em;
+      pointer-events: none;
+    }
+    .title-bar .sub {
+      font-size: 0.8rem;
+      color: #c8cdd4;
+      margin-top: 2px;
+      text-shadow: 0 1px 6px rgba(0,0,0,0.7);
+      pointer-events: none;
+    }
+    .info-btn {
+      background: rgba(18, 20, 28, 0.88);
+      border: 1px solid #3a4255;
+      color: #ffdc50;
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 1.05rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, border-color 0.15s;
+      flex-shrink: 0;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+    }
+    .info-btn:hover {
+      background: #252a36;
+      border-color: #ffdc50;
+    }
+
+    /* ── Side volcano panel ──────────────────────────────────── */
+    #panel {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: min(380px, 92vw);
+      height: 100%;
+      z-index: 20;
+      background: linear-gradient(165deg, #161a24 0%, #0f1218 100%);
+      border-left: 1px solid #2a3040;
+      box-shadow: -12px 0 40px rgba(0,0,0,0.55);
+      transform: translateX(105%);
+      transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #panel.open { transform: translateX(0); }
+
+    .panel-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding: 1.15rem 1.25rem 0.75rem;
+      border-bottom: 1px solid #252a36;
+      flex-shrink: 0;
+    }
+    .panel-header h2 {
+      font-size: 1.45rem;
+      font-weight: 700;
+      color: #ffdc50;
+      line-height: 1.2;
+    }
+    .close-btn {
+      background: #252a36;
+      border: none;
+      color: #9aa0a6;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1.15rem;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, color 0.15s;
+      flex-shrink: 0;
+      margin-left: 0.75rem;
+    }
+    .close-btn:hover { background: #333848; color: #fff; }
+
+    .panel-body {
+      padding: 1rem 1.25rem 1.5rem;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .badges { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.9rem; }
+    .badge {
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.22rem 0.55rem;
+      border-radius: 999px;
+      border: 1px solid;
+    }
+    .badge.status-active {
+      background: #30d15822; color: #30d158; border-color: #30d15855;
+    }
+    .badge.status-historical {
+      background: #ff9f0a22; color: #ff9f0a; border-color: #ff9f0a55;
+    }
+    .badge.type {
+      background: #5e6ad222; color: #8b93e8; border-color: #5e6ad255;
+    }
+
+    .meta-row { color: #9aa0a6; font-size: 0.88rem; margin-bottom: 1rem; }
+    .meta-row strong { color: #d0d4dc; }
+
+    .panel-image {
+      width: 100%;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #1a1f2a;
+      margin-bottom: 1rem;
+      aspect-ratio: 16 / 10;
+    }
+    .panel-image img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .panel-info { font-size: 0.92rem; line-height: 1.6; color: #c4c8d0; }
+    .last-eruption {
+      margin-top: 1.1rem;
+      padding-top: 0.9rem;
+      border-top: 1px solid #252a36;
+      font-size: 0.85rem;
+      color: #9aa0a6;
+    }
+    .last-eruption strong { color: #e8eaed; }
+
+    /* ── Hover tooltip ───────────────────────────────────────── */
+    #tooltip {
+      position: absolute;
+      z-index: 15;
+      pointer-events: none;
+      background: rgba(18, 20, 28, 0.94);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.4;
+      border: 1px solid #2a3040;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      max-width: 220px;
+      display: none;
+      transform: translate(-50%, -120%);
+    }
+    #tooltip b { color: #ffdc50; }
+
+    .hint {
+      position: absolute;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      background: rgba(18, 20, 28, 0.88);
+      border: 1px solid #2a3040;
+      padding: 0.45rem 0.9rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      color: #9aa0a6;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    /* ── Intro / About overlay ───────────────────────────────── */
+    #intro {
+      position: absolute;
+      inset: 0;
+      z-index: 50;
+      background: rgba(8, 10, 14, 0.72);
+      backdrop-filter: blur(6px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.25rem;
+      opacity: 1;
+      transition: opacity 0.35s ease, visibility 0.35s ease;
+      visibility: visible;
+    }
+    #intro.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .intro-card {
+      width: min(720px, 100%);
+      max-height: min(88vh, 900px);
+      background: linear-gradient(165deg, #161a24 0%, #0f1218 100%);
+      border: 1px solid #2a3040;
+      border-radius: 16px;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.55);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .intro-header {
+      padding: 1.35rem 1.5rem 1rem;
+      border-bottom: 1px solid #252a36;
+      flex-shrink: 0;
+    }
+    .intro-header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #ffdc50;
+      letter-spacing: 0.02em;
+    }
+    .intro-header p {
+      margin-top: 0.35rem;
+      font-size: 0.9rem;
+      color: #9aa0a6;
+      line-height: 1.45;
+    }
+
+    .intro-body {
+      padding: 1.1rem 1.5rem 0.5rem;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .intro-body h3 {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #ffdc50;
+      margin: 1.15rem 0 0.45rem;
+      letter-spacing: 0.02em;
+    }
+    .intro-body h3:first-child { margin-top: 0; }
+
+    .intro-body p, .intro-body li {
+      font-size: 0.88rem;
+      line-height: 1.58;
+      color: #c4c8d0;
+    }
+    .intro-body p { margin-bottom: 0.55rem; }
+
+    .intro-body ul {
+      margin: 0.35rem 0 0.6rem 1.15rem;
+    }
+    .intro-body li { margin-bottom: 0.3rem; }
+
+    .intro-body .step-list {
+      counter-reset: step;
+      list-style: none;
+      margin-left: 0;
+      padding-left: 0;
+    }
+    .intro-body .step-list li {
+      counter-increment: step;
+      position: relative;
+      padding-left: 2rem;
+      margin-bottom: 0.45rem;
+    }
+    .intro-body .step-list li::before {
+      content: counter(step);
+      position: absolute;
+      left: 0;
+      top: 0.05rem;
+      width: 1.35rem;
+      height: 1.35rem;
+      border-radius: 50%;
+      background: #ff453a33;
+      color: #ff6b63;
+      font-size: 0.72rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #ff453a55;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin: 0.5rem 0 0.75rem;
+    }
+    @media (max-width: 560px) {
+      .two-col { grid-template-columns: 1fr; }
+    }
+    .mini-card {
+      background: #1a1f2a;
+      border: 1px solid #2a3040;
+      border-radius: 10px;
+      padding: 0.75rem 0.9rem;
+    }
+    .mini-card strong {
+      display: block;
+      color: #ffdc50;
+      font-size: 0.82rem;
+      margin-bottom: 0.3rem;
+    }
+    .mini-card span {
+      font-size: 0.82rem;
+      color: #c4c8d0;
+      line-height: 1.45;
+    }
+
+    .intro-footer {
+      padding: 1rem 1.5rem 1.25rem;
+      border-top: 1px solid #252a36;
+      flex-shrink: 0;
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.6rem;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #ff6b3d, #ff453a);
+      border: none;
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.92rem;
+      padding: 0.7rem 1.35rem;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: transform 0.12s, box-shadow 0.12s;
+      box-shadow: 0 4px 16px rgba(255, 69, 58, 0.35);
+    }
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(255, 69, 58, 0.45);
+    }
+  </style>
+</head>
+<body>
+
+  <div id="map"></div>
+
+  <div class="title-bar">
+    <button class="info-btn" id="open-intro" title="About the Luzon Volcanic Arc">ℹ</button>
+    <div>
+      <h1>🌋 Luzon Volcanic Arc</h1>
+      <p class="sub">Click a volcano for details</p>
+    </div>
+  </div>
+
+  <div class="hint">Hover · click icons · drag to pan · scroll to zoom</div>
+  <div id="tooltip"></div>
+
+  <!-- Volcano detail panel -->
+  <aside id="panel" aria-hidden="true">
+    <div class="panel-header">
+      <h2 id="p-name">—</h2>
+      <button class="close-btn" id="close-btn" title="Close" aria-label="Close panel">×</button>
+    </div>
+    <div class="panel-body">
+      <div class="badges" id="p-badges"></div>
+      <div class="meta-row" id="p-meta"></div>
+      <div class="panel-image">
+        <img id="p-image" src="" alt="Volcano photo" />
+      </div>
+      <p class="panel-info" id="p-info"></p>
+      <div class="last-eruption" id="p-eruption"></div>
+    </div>
+  </aside>
+
+  <!-- Intro / About overlay (shown first) -->
+  <div id="intro" role="dialog" aria-modal="true" aria-labelledby="intro-title">
+    <div class="intro-card">
+      <div class="intro-header">
+        <h1 id="intro-title">🌋 What is the Luzon Volcanic Arc?</h1>
+        <p>
+          A chain of volcanoes running roughly north–south across the Luzon Strait —
+          from Taiwan down through the Batanes and Babuyan islands onto Luzon itself.
+          It is not only the volcanoes on Luzon Island, but the whole island arc between Taiwan and the Philippines.
+        </p>
+      </div>
+
+      <div class="intro-body">
+
+        <h3>How it formed</h3>
+        <p>
+          The arc was created by <strong>eastward subduction along the Manila Trench</strong>:
+          the Eurasian Plate (Sundaland Block) sinks beneath the Philippine Mobile Belt.
+          Subduction began in the late Oligocene to early Miocene (around 16 million years ago in the north).
+          The trench is about <strong>1,200 km</strong> long and subducts at roughly <strong>1–2 cm per year</strong>.
+          Because of this, the arc is also called the <em>Manila Trench volcanic system</em>.
+          Volcanoes are generally younger toward the south than near Taiwan.
+        </p>
+
+        <h3>Tectonic plates colliding to form the arc</h3>
+        <p>
+          The Philippine Volcanic Island Arc System is created by a complex collision between two primary tectonic plates
+          squeezing a microplate area known as the <strong>Philippine Mobile Belt</strong>:
+        </p>
+        <ul>
+          <li>
+            <strong>Eurasian Plate (Sunda Plate Block)</strong> — Pushes and subducts from the west along trenches
+            like the Manila, Negros, Sulu, and Cotabato Trenches.
+          </li>
+          <li>
+            <strong>Philippine Sea Plate</strong> — Pushes and subducts from the east beneath the archipelago
+            along the Philippine Trench and East Luzon Trough.
+          </li>
+        </ul>
+        <p>
+          This opposing subduction forces oceanic crust deep underground where it melts into magma that feeds the volcanoes.
+        </p>
+
+        <h3>How long has this volcanic chain been active?</h3>
+        <ul>
+          <li>
+            <strong>Inception of early arcs:</strong> The oldest volcanic arc rocks that built the foundation of the
+            Philippine archipelago began forming about <strong>40 to 50 million years ago</strong> (during the Eocene epoch).
+          </li>
+          <li>
+            <strong>Modern active trenches &amp; volcanic chains:</strong> The current active subduction system and modern
+            volcanic chains (like Mayon, Taal, Pinatubo, and Apo) developed much later, taking shape over the past
+            <strong>2 to 15 million years</strong> (from the Miocene epoch through the Quaternary period), and remain
+            fully active today.
+          </li>
+        </ul>
+        <p>
+          <em>Summary:</em> While the ancient arc systems started forming over 45 million years ago, the current active
+          subduction trenches and modern volcanic chains have been actively shaping the archipelago for the last few
+          million years and continue to fuel frequent volcanic eruptions and seismic activity today.
+        </p>
+
+        <h3>Volcanicity of the Luzon Volcanic Arc</h3>
+        <p>
+          The volcanoes of the arc are typical of a <strong>subduction-related island arc</strong>. Most are
+          <strong>andesitic stratovolcanoes</strong>, but rock compositions range from basalt to rhyolite.
+        </p>
+        <ul>
+          <li>
+            <strong>Magma series:</strong> Mainly <em>calc-alkaline</em> (the classic arc type). Older centers are often
+            low-K tholeiitic; younger ones can be medium- to high-K calc-alkaline.
+          </li>
+          <li>
+            <strong>Chemical signature:</strong> Strong subduction fingerprints — enrichment in large-ion lithophile
+            elements, low TiO<sub>2</sub>, and clear negative Nb–Ta–Ti anomalies.
+          </li>
+          <li>
+            <strong>Eruption styles:</strong> Range from explosive (Plinian, Vulcanian, phreatomagmatic) to effusive
+            lava flows. Common hazards include pyroclastic flows, ash falls, and lahars (especially after heavy rain).
+          </li>
+          <li>
+            <strong>Landforms:</strong> Mostly steep stratovolcanoes (Mayon, Pinatubo, Babuyan Claro). Taal is a large
+            caldera with an active island cone; Didicas is a compound volcano that grew from the sea.
+          </li>
+          <li>
+            <strong>Geochemical domains:</strong> Five segments with distinct chemistry — Mindoro, Bataan, Northern Luzon,
+            Babuyan, and Taiwan — reflecting differences in slab input, sediment thickness, and crustal contamination
+            along the arc.
+          </li>
+        </ul>
+        <p>
+          Activity remains high today. Pinatubo’s 1991 eruption was one of the largest of the 20th century; Taal and
+          Mayon continue to produce frequent eruptions that are closely monitored by PHIVOLCS.
+        </p>
+
+        <h3>Geographic extent</h3>
+        <p>About 1,200 km from the Coastal Range of Taiwan south to southern Mindoro / the Bataan area of Luzon.</p>
+        <ul>
+          <li><strong>Northern end (Taiwan segment):</strong> Eastern Coastal Range, Green Island, Orchid Island, Kaotai Rock</li>
+          <li><strong>Middle (Bashi Channel / Luzon Strait):</strong> Y’ami (Mavudis), Mabudis, Siayan, Itbayat, Diogo, Batan, Ibuhos, Sabtang</li>
+          <li><strong>Southern end (Babuyan to Luzon):</strong> Babuyan Islands, Didicas, Camiguin de Babuyanes, then main Luzon — including Mt. Cagua, the Zambales–Bataan arc (Pinatubo, Natib, Mariveles), Taal, and related centers toward Mindoro</li>
+        </ul>
+        <p>
+          Geochemistry divides the arc into five domains: <em>Mindoro, Bataan, Northern Luzon, Babuyan, and Taiwan</em>.
+          Mindanao has separate arcs (e.g. Central Mindanao, Sangihe); the Luzon Volcanic Arc is the Manila Trench system affecting western Luzon.
+        </p>
+
+        <h3>The “Double Island Arc” (northern segment)</h3>
+        <p>
+          In the northernmost part (Luzon Strait / Babuyan–Taiwan area), the arc splits into
+          <strong>two parallel chains</strong> instead of one:
+        </p>
+        <div class="two-col">
+          <div class="mini-card">
+            <strong>Western Arc (Front / Volcanic)</strong>
+            <span>Camiguin Norte, Babuyan Claro, Calayan, Dalupiri, and related islands — built by active volcanoes from magma above the subducting plate.</span>
+          </div>
+          <div class="mini-card">
+            <strong>Eastern Arc (Back / Non-volcanic)</strong>
+            <span>Batanes and the Hengchun Ridge of southern Taiwan — mostly uplifted older rocks and coral limestone, pushed up by plate collision and compression.</span>
+          </div>
+        </div>
+        <p>One chain is volcanic (melted rock); the other is uplifted land (squeezed upward) — running side by side. That is why it is called a “double” island arc.</p>
+
+        <h3>What happens to the South China Sea slab under the Manila Trench?</h3>
+        <ol class="step-list">
+          <li><strong>Subduction begins</strong> — The South China Sea plate (part of the Eurasian Plate) moves east and sinks beneath the Philippine archipelago along the Manila Trench.</li>
+          <li><strong>Heating</strong> — At roughly 100–150 km depth, the slab becomes extremely hot.</li>
+          <li><strong>Water released</strong> — Minerals in the oceanic crust release trapped water, which lowers the melting point of the mantle above.</li>
+          <li><strong>Magma forms</strong> — Mantle rock melts into magma.</li>
+          <li><strong>Magma rises</strong> — Less dense than solid rock, it pushes upward through the crust.</li>
+          <li><strong>Volcanoes form</strong> — Magma reaches the surface and feeds the Luzon Volcanic Arc (Pinatubo, Taal, Mayon, Babuyan volcanoes, and others).</li>
+          <li><strong>Deep recycling</strong> — The slab continues sinking into the deep mantle.</li>
+        </ol>
+        <p><em>In short:</em> sinks → heats → releases water → creates magma → feeds volcanoes → returns to the deep mantle.</p>
+
+        <h3>Famous volcanoes on the arc</h3>
+        <ul>
+          <li><strong>Mayon</strong> — Near-perfect symmetrical cone; most active in the Philippines.</li>
+          <li><strong>Taal</strong> — Volcano island inside a lake; highly active and closely monitored.</li>
+          <li><strong>Pinatubo</strong> — Catastrophic 1991 eruption after centuries of dormancy.</li>
+          <li><strong>Babuyan group</strong> — Smith, Babuyan Claro, Didicas (emerged above sea level in the 1950s), and others.</li>
+        </ul>
+        <p>
+          <strong>Pinatubo 1991:</strong> One of the largest eruptions of the 20th century; injected sulfur dioxide into the stratosphere and cooled global climate by about 0.5 °C;
+          joint PHIVOLCS–USGS forecasting enabled mass evacuations that saved tens of thousands of lives; subsequent lahars reshaped the landscape and influenced hazard science worldwide.
+        </p>
+        <p>
+          Hazard exposure is assessed volcano by volcano (PHIVOLCS maps). Population at risk can reach into the millions depending on which zones and year are counted — there is no single official total for the entire arc.
+        </p>
+
+      </div>
+
+      <div class="intro-footer">
+        <button class="btn-primary" id="start-map">Explore the map →</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── Data ──────────────────────────────────────────────────────────────
+    const volcanoes = [
+      {
+        name: "Smith",
+        lat: 19.52, lon: 121.92,
+        elevation: 688,
+        type: "Stratovolcano",
+        status: "Historical",
+        last_eruption: "1924",
+        info: "Smith Volcano (also known as Mount Babuyan) sits on Babuyan Island in the Babuyan Islands group north of Luzon. It is a small stratovolcano that forms part of the northern segment of the Luzon volcanic arc.",
+        image: "smith.png"
+      },
+      {
+        name: "Babuyan Claro",
+        lat: 19.52, lon: 121.94,
+        elevation: 1080,
+        type: "Stratovolcano",
+        status: "Historical",
+        last_eruption: "1860",
+        info: "Babuyan Claro is the highest peak on Babuyan Island. It is an andesitic stratovolcano with a history of eruptions in the 19th and early 20th centuries. Fumaroles and hot springs are present in the area.",
+        image: "babuyan.png"
+      },
+      {
+        name: "Didicas",
+        lat: 19.08, lon: 122.20,
+        elevation: 228,
+        type: "Compound volcano",
+        status: "Historical",
+        last_eruption: "January 6-9, 1978",
+        info: "Didicas is a small volcanic island northeast of Luzon. It emerged from the sea in the 1850s and has grown through several eruptions. The island is uninhabited and forms part of the Babuyan Islands volcanic chain.",
+        image: "didicas.png"
+      },
+      {
+        name: "Cagua",
+        lat: 18.22, lon: 122.12,
+        elevation: 1133,
+        type: "Stratovolcano",
+        status: "Historical",
+        last_eruption: "1860",
+        info: "Mount Cagua is a stratovolcano in northeastern Cagayan province. It has a summit crater and several parasitic cones. The last known eruptive activity was in the 1860s.",
+        image: "cagua.png"
+      },
+      {
+        name: "Pinatubo",
+        lat: 15.13, lon: 120.35,
+        elevation: 1486,
+        type: "Stratovolcano",
+        status: "Active",
+        last_eruption: "November 30, 2021",
+        info: "Mount Pinatubo produced one of the largest eruptions of the 20th century in June 1991. The eruption formed a caldera that is now filled by a crater lake. It lies on the borders of Zambales, Tarlac, and Pampanga.",
+        image: "pinatubo.png"
+      },
+      {
+        name: "Taal",
+        lat: 14.00, lon: 120.99,
+        elevation: 311,
+        type: "Caldera",
+        status: "Active",
+        last_eruption: "October 8. 2026",
+        info: "Taal Volcano is a large caldera filled by Taal Lake in Batangas. The main cone (Volcano Island) sits in the middle of the lake. It is one of the most active volcanoes in the Philippines and is closely monitored by PHIVOLCS.",
+        image: "taal.png"
+      },
+      {
+        name: "Mayon",
+        lat: 13.26, lon: 123.69,
+        elevation: 2462,
+        type: "Stratovolcano",
+        status: "Active",
+        last_eruption: "January 6, 2026",
+        info: "Mayon Volcano in Albay is famous for its nearly perfect conical shape. It is the most active volcano in the Philippines, with frequent lava flows, ash eruptions, and pyroclastic flows. It is a major tourist destination and a protected landscape.",
+        image: "mayon.png"
+      }
+    ];
+
+    const arcPath = [{
+      path: [
+        [121.92, 19.52], [122.20, 19.08], [122.12, 18.22],
+        [121.60, 16.50], [120.35, 15.13], [120.99, 14.00],
+        [123.69, 13.26]
+      ]
+    }];
+
+    const ICON_ATLAS = "https://raw.githubusercontent.com/visgl/deck.gl-data/master/website/icon-atlas.png";
+    const ICON_MAPPING = {
+      marker: { x: 0, y: 0, width: 128, height: 128, anchorY: 128, mask: true }
+    };
+
+    // ── Intro overlay ─────────────────────────────────────────────────────
+    const intro = document.getElementById("intro");
+    document.getElementById("start-map").addEventListener("click", () => {
+      intro.classList.add("hidden");
+    });
+    document.getElementById("open-intro").addEventListener("click", () => {
+      intro.classList.remove("hidden");
+      closePanel();
+    });
+
+    // ── Volcano side panel ────────────────────────────────────────────────
+    const panel = document.getElementById("panel");
+    const tooltipEl = document.getElementById("tooltip");
+
+    function openPanel(v) {
+      document.getElementById("p-name").textContent = v.name;
+      const statusClass = v.status === "Active" ? "status-active" : "status-historical";
+      document.getElementById("p-badges").innerHTML =
+        `<span class="badge ${statusClass}">${v.status}</span>` +
+        `<span class="badge type">${v.type}</span>`;
+      document.getElementById("p-meta").innerHTML =
+        `<strong>${v.elevation.toLocaleString()} m</strong> elevation`;
+      const img = document.getElementById("p-image");
+      img.src = v.image;
+      img.alt = v.name;
+      document.getElementById("p-info").textContent = v.info;
+      document.getElementById("p-eruption").innerHTML =
+        `<strong>Last known eruption:</strong> ${v.last_eruption}`;
+      panel.classList.add("open");
+      panel.setAttribute("aria-hidden", "false");
+    }
+
+    function closePanel() {
+      panel.classList.remove("open");
+      panel.setAttribute("aria-hidden", "true");
+    }
+
+    document.getElementById("close-btn").addEventListener("click", closePanel);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        if (!intro.classList.contains("hidden")) {
+          intro.classList.add("hidden");
+        } else {
+          closePanel();
+        }
+      }
+    });
+
+    // ── Layers ────────────────────────────────────────────────────────────
+    const { DeckGL, PathLayer, IconLayer, TextLayer } = deck;
+
+    const pathLayer = new PathLayer({
+      id: "arc-path",
+      data: arcPath,
+      getPath: d => d.path,
+      getColor: [255, 45, 55, 230],
+      getWidth: 7,
+      widthMinPixels: 5,
+      pickable: false
+    });
+
+    const iconLayer = new IconLayer({
+      id: "volcano-icons",
+      data: volcanoes,
+      iconAtlas: ICON_ATLAS,
+      iconMapping: ICON_MAPPING,
+      getIcon: () => "marker",
+      getPosition: d => [d.lon, d.lat],
+      getSize: 42,
+      sizeScale: 1,
+      getColor: [255, 80, 60],
+      pickable: true,
+      autoHighlight: true,
+      highlightColor: [255, 220, 80, 200]
+    });
+
+    const labelLayer = new TextLayer({
+      id: "volcano-labels",
+      data: volcanoes,
+      getPosition: d => [d.lon, d.lat],
+      getText: d => d.name,
+      getSize: 15,
+      getColor: [255, 255, 255, 255],
+      getPixelOffset: [0, -36],
+      billboard: true,
+      pickable: false,
+      fontFamily: "Segoe UI, system-ui, sans-serif",
+      fontWeight: 700,
+      outlineWidth: 8,
+      outlineColor: [0, 0, 0, 180]
+    });
+
+    const titleLayer = new TextLayer({
+      id: "map-title",
+      data: [{ name: "LUZON VOLCANIC ARC", lon: 121.4, lat: 16.8 }],
+      getPosition: d => [d.lon, d.lat],
+      getText: d => d.name,
+      getSize: 22,
+      getColor: [255, 220, 80, 255],
+      billboard: true,
+      pickable: false,
+      fontFamily: "Segoe UI, system-ui, sans-serif",
+      fontWeight: 700,
+      outlineWidth: 10,
+      outlineColor: [0, 0, 0, 200]
+    });
+
+    const satelliteStyle = {
+      version: 8,
+      sources: {
+        esri: {
+          type: "raster",
+          tiles: [
+            "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+          ],
+          tileSize: 256,
+          attribution: "Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+        }
+      },
+      layers: [
+        {
+          id: "esri-satellite",
+          type: "raster",
+          source: "esri",
+          minzoom: 0,
+          maxzoom: 19
+        }
+      ]
+    };
+
+    // Controlled camera so we can fly/zoom to a volcano on click
+    let viewState = {
+      latitude: 16.5,
+      longitude: 122.0,
+      zoom: 5.2,
+      pitch: 48,
+      bearing: -12,
+      transitionDuration: 0
+    };
+
+    function flyToVolcano(v) {
+      // Shift center slightly left so the volcano isn't hidden behind the side panel
+      const panelOpen = panel.classList.contains("open");
+      const lonOffset = panelOpen ? 0.15 : 0.08;
+
+      viewState = {
+        ...viewState,
+        longitude: v.lon + lonOffset,
+        latitude: v.lat,
+        zoom: 10.5,
+        pitch: 55,
+        bearing: -8,
+        transitionDuration: 1200,
+        transitionEasing: t => t * (2 - t) // ease-out
+      };
+      deckgl.setProps({ viewState });
+    }
+
+    const deckgl = new DeckGL({
+      container: "map",
+      mapStyle: satelliteStyle,
+      viewState,
+      controller: true,
+      layers: [pathLayer, iconLayer, labelLayer, titleLayer],
+
+      onViewStateChange: ({ viewState: vs }) => {
+        viewState = { ...vs, transitionDuration: 0 };
+        deckgl.setProps({ viewState });
+      },
+
+      getTooltip: ({ object, x, y }) => {
+        if (!object || !object.name) {
+          tooltipEl.style.display = "none";
+          return null;
+        }
+        tooltipEl.style.display = "block";
+        tooltipEl.style.left = x + "px";
+        tooltipEl.style.top = y + "px";
+        tooltipEl.innerHTML =
+          `<b>${object.name}</b><br/>Elevation: ${object.elevation} m<br/><span style="color:#9aa0a6;font-size:11px">Click to zoom & details →</span>`;
+        return null;
+      },
+
+      onClick: ({ object }) => {
+        if (object && object.name) {
+          openPanel(object);
+          flyToVolcano(object);
+        } else {
+          closePanel();
+        }
+      },
+
+      onHover: ({ object }) => {
+        if (!object || !object.name) {
+          tooltipEl.style.display = "none";
+        }
+      }
+    });
+  </script>
+</body>
+</html>
